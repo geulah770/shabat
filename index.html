@@ -244,6 +244,7 @@ function saveRow(r,patch){
   var rng="'"+CFG.TAB+"'!A"+r.ord+":G"+r.ord;
   return getValues(rng).then(function(v){if(sigOf(v[0])!==r.sig)throw staleErr();
     var t="'"+CFG.TAB+"'!",data=[];
+    if(patch.name!=null)data.push({range:t+"A"+r.ord,values:[[patch.name]]});
     if(patch.amt!=null)data.push({range:t+"B"+r.ord,values:[[patch.amt]]});
     if(patch.notes!=null)data.push({range:t+"F"+r.ord,values:[[patch.notes]]});
     if(patch.paid!=null)data.push({range:t+"G"+r.ord,values:[[patch.paid]]});
@@ -323,7 +324,24 @@ function openEditor(r){var layer=$("#layer");layer.textContent="";
   scrim.onclick=function(e){if(e.target===scrim)close()};
   sh.appendChild(el("h3",null,r.name));
   var k=el("div","kpi");k.style.marginBottom="12px";k.appendChild(el("div","lbl",r.paid?"שולם במלואו (הסכום בגיליון נשמר)":"יתרת חוב"));k.appendChild(el("div","val num",money(r.amt,r.ru)));if(r.parsha)k.appendChild(el("div","sub",r.parsha));sh.appendChild(k);
-  if(r.notes)sh.appendChild(el("div","note",r.notes));
+  var ed=el("div");ed.style.marginBottom="12px";
+  function ef(id,label,val,type){var w=el("div","field");var l=el("label",null,label);l.htmlFor=id;w.appendChild(l);var i=type==="textarea"?el("textarea"):el("input");i.id=id;if(type&&type!=="textarea"){i.type=type;if(type==="number"){i.inputMode="decimal";i.min="0"}}i.value=val;w.appendChild(i);return w}
+  ed.appendChild(ef("ed-name","שם",r.name,"text"));
+  var eg=el("div","grid2");eg.appendChild(ef("ed-amt","סכום החוב ב-₪",r.amt,"number"));eg.appendChild(ef("ed-add","הוספה לסכום",""  ,"number"));ed.appendChild(eg);
+  ed.appendChild(ef("ed-notes","הערות",r.notes,"textarea"));
+  var sv=el("button","btn","שמירת שינויים");sv.type="button";sv.style.width="100%";if(readOnly)sv.disabled=true;
+  sv.onclick=function(){
+    var nm=$("#ed-name").value.trim(),am=num($("#ed-amt").value),ad=num($("#ed-add").value),nt=$("#ed-notes").value.trim();
+    if(!nm){toast("צריך להזין שם");return}
+    var na=Math.round((am+ad)*100)/100;if(!(na>0)){toast("הסכום חייב להיות גדול מאפס");return}
+    var patch={},log=[];
+    if(nm!==r.name){patch.name=nm;log.push("השם שונה מ-"+r.name)}
+    if(ad>0)log.push("נוספו "+fmt(ad));
+    if(na!==r.amt){patch.amt=na;if(!(ad>0))log.push("הסכום תוקן מ-"+fmt(r.amt)+" ל-"+fmt(na))}
+    if(nt!==r.notes||log.length){patch.notes=log.length?addNote(nt,log.join(", ")+" ב-"+today()):nt}
+    if(!Object.keys(patch).length){toast("לא בוצע שינוי");return}
+    sv.disabled=true;run(r,patch,"השינויים נשמרו עבור "+nm+".")};
+  ed.appendChild(sv);sh.appendChild(ed);
   if(readOnly)sh.appendChild(el("div","ro","לחשבון הזה אין הרשאת כתיבה בגיליון, לכן אפשר רק לצפות."));
   var bt=el("div","sheetbtns");bt.style.marginTop="12px";
   if(!r.paid){
