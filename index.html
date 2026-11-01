@@ -160,6 +160,7 @@ select,.field input,.field textarea,.field select{width:100%;border:1px solid va
   </div>
   <main id="view"></main>
 </div>
+<button class="fab" id="fab" type="button" aria-label="התחייבות חדשה" hidden><span>+</span> התחייבות חדשה</button>
 <div id="layer"></div>
 <script>
 (function(){
@@ -348,9 +349,56 @@ function exportCsv(){function q(v){v=v==null?"":String(v);return '"'+v.replace(/
   rows.filter(function(r){return !r.paid}).forEach(function(r){L.push([r.name,r.amt,r.cur,r.parsha,r.notes].map(q).join(","))});
   var b=new Blob(["﻿"+L.join("\r\n")],{type:"text/csv;charset=utf-8"});var a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="חובות-עליות-שבת.csv";document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},1000)}
 
+
+/* התחייבות חדשה */
+function isoToDmy(v){var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v||"");return m?m[3]+"."+m[2]+"."+m[1]:today()}
+function todayIso(){var d=new Date();function z(n){return (n<10?"0":"")+n}return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate())}
+function appendPledge(d){
+  var t="'"+CFG.TAB+"'!";
+  return api("/values/"+enc(t+"A1")+":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS",{method:"POST",body:{values:[[d.name,d.amt,d.cur,d.parsha,"נוספה ידנית",d.notes,false]]}}).then(function(j){
+    var m=/!A(\d+)/.exec((j&&j.updates&&j.updates.updatedRange)||"");var row=m?+m[1]:0;
+    if(!row)return;
+    return api(":batchUpdate",{method:"POST",body:{requests:[{setDataValidation:{range:{sheetId:0,startRowIndex:row-1,endRowIndex:row,startColumnIndex:6,endColumnIndex:7},rule:{condition:{type:"BOOLEAN"},strict:true}}}]}}).catch(function(){})})}
+function openNew(){
+  var layer=$("#layer");layer.textContent="";
+  var scrim=el("div","scrim"),sh=el("div","sheet");sh.setAttribute("role","dialog");sh.setAttribute("aria-modal","true");
+  scrim.onclick=function(e){if(e.target===scrim)close()};
+  sh.appendChild(el("h3",null,"התחייבות חדשה"));
+  function fld(id,label,type,ph){var w=el("div","field");var l=el("label",null,label);l.htmlFor=id;w.appendChild(l);var i=el("input");i.id=id;i.type=type;if(ph)i.placeholder=ph;if(type==="number"){i.inputMode="decimal";i.min="0"}w.appendChild(i);return w}
+  sh.appendChild(fld("n-name","שם","text"));
+  var g=el("div","grid2");g.appendChild(fld("n-amt","סכום","number"));
+  var cw=el("div","field");var cl=el("label",null,"מטבע");cl.htmlFor="n-cur";cw.appendChild(cl);var cs=el("select");cs.id="n-cur";[["ש\"ח","₪ שקל"],["רובל","רובל"]].forEach(function(o){var op=el("option",null,o[1]);op.value=o[0];cs.appendChild(op)});cw.appendChild(cs);g.appendChild(cw);sh.appendChild(g);
+  sh.appendChild(fld("n-parsha","פרשה (לא חובה)","text","לדוגמה: וישלח"));
+  sh.appendChild(fld("n-date","תאריך","date"));
+  sh.appendChild(fld("n-notes","הערה (לא חובה)","text"));
+  var box=el("div");sh.appendChild(box);
+  if(readOnly)sh.appendChild(el("div","ro","לחשבון הזה אין הרשאת כתיבה בגיליון, לכן אפשר רק לצפות."));
+  function close(){layer.textContent="";document.removeEventListener("keydown",esc)}
+  function esc(e){if(e.key==="Escape")close()}
+  function done(msg){toast(msg);close();loadAll(false)}
+  function fail(e){if(e&&e.stale){toast("השורה שונתה בגיליון בינתיים. הנתונים רועננו, נסו שוב.");close();loadAll(false);return}toast(writeErr(e));busy(false)}
+  var bt=el("div","sheetbtns");var cancel=el("button","btn","ביטול");cancel.type="button";cancel.onclick=close;
+  var save=el("button","btn primary","הוספה");save.type="button";if(readOnly)save.disabled=true;bt.appendChild(cancel);bt.appendChild(save);sh.appendChild(bt);
+  function busy(b){save.disabled=b||readOnly;cancel.disabled=b}
+  function read(){var name=$("#n-name").value.trim(),amt=num($("#n-amt").value),cur=$("#n-cur").value,pr=$("#n-parsha").value.trim(),dt=isoToDmy($("#n-date").value||todayIso());
+    return{name:name,amt:amt,cur:cur,ru:cur==="רובל",parsha:(pr?pr+" ":"")+"("+dt+")",notes:$("#n-notes").value.trim()}}
+  function separate(){var d=read();busy(true);appendPledge(d).then(function(){done("ההתחייבות של "+d.name+" נוספה לגיליון")}).catch(fail)}
+  save.onclick=function(){var d=read();
+    if(!d.name){toast("צריך להזין שם");return}
+    if(!(d.amt>0)){toast("צריך להזין סכום גדול מאפס");return}
+    var dup=rows.filter(function(r){return !r.paid&&r.ru===d.ru&&r.name.replace(/\s+/g," ")===d.name.replace(/\s+/g," ")})[0];
+    if(dup&&!box.firstChild){
+      box.appendChild(el("div","note","כבר קיים חוב פתוח של "+money(dup.amt,dup.ru)+" על שם "+dup.name+". להוסיף אליו או לפתוח שורה נפרדת?"));
+      var b2=el("div","sheetbtns");var a=el("button","btn primary","הוספה לחוב הקיים");a.type="button";var n=el("button","btn","שורה נפרדת");n.type="button";b2.appendChild(a);b2.appendChild(n);box.appendChild(b2);
+      a.onclick=function(){busy(true);var dd=read();saveRow(dup,{amt:Math.round((dup.amt+dd.amt)*100)/100,notes:addNote(dup.notes,"נוספה התחייבות של "+fmt(dd.amt)+" "+dd.parsha+(dd.notes?", "+dd.notes:""))}).then(function(){done("נוסף "+fmt(dd.amt)+" לחוב של "+dup.name)}).catch(fail)};
+      n.onclick=function(){box.textContent="";separate()};return}
+    separate()};
+  scrim.appendChild(sh);layer.appendChild(scrim);document.addEventListener("keydown",esc);
+  setTimeout(function(){var f=$("#n-name");if(f)f.focus()},50)}
+$("#fab").onclick=openNew;
 function go(t){st.tab=t;render();window.scrollTo(0,0)}
 function render(){document.querySelectorAll(".tabs button").forEach(function(b){b.setAttribute("aria-selected",b.dataset.tab===st.tab?"true":"false")});
-  renderKpis();var h=$("#view");h.textContent="";if(st.tab==="sum")renderSummary(h);else renderList(h)}
+  $("#fab").hidden=readOnly;renderKpis();var h=$("#view");h.textContent="";if(st.tab==="sum")renderSummary(h);else renderList(h)}
 document.querySelectorAll(".tabs button").forEach(function(b){b.onclick=function(){go(b.dataset.tab)}});
 $("#signout").onclick=signOut;
 fetch("/api/config",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&j.clientId)CFG.CLIENT_ID=j.clientId}).catch(function(){}).then(function(){
