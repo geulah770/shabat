@@ -194,15 +194,23 @@ function showGate(o){o=o||{};stopPolling();$("#app").hidden=true;$("#layer").tex
   if(o.error)b.appendChild(el("div","err",o.error));
   var x=el("button","btn primary","התחברות עם Google");x.type="button";x.onclick=signIn;b.appendChild(x);
   b.appendChild(el("p","small","אין הרשאה? בקשו מבעל הגיליון להוסיף את החשבון שלכם כעורך."));g.appendChild(b)}
-function signIn(){var s=Math.random().toString(36).slice(2)+Date.now().toString(36);try{sessionStorage.setItem("oauth_state",s)}catch(e){}
-  location.href="https://accounts.google.com/o/oauth2/v2/auth?client_id="+enc(CFG.CLIENT_ID)+"&redirect_uri="+enc(location.origin+"/")+"&response_type=token&scope="+enc(CFG.SCOPE)+"&include_granted_scopes=true&prompt=select_account&state="+enc(s)}
+var SESS="aliyot_sess",KEEP=30*24*3600*1000,tokExp=0;
+function getSess(){try{var j=JSON.parse(localStorage.getItem(SESS)||"null");if(j&&j.until>Date.now())return j}catch(e){}return null}
+function putSess(t,expSec){tokExp=Date.now()+expSec*1000;try{localStorage.setItem(SESS,JSON.stringify({tok:t,exp:tokExp,until:Date.now()+KEEP}))}catch(e){}}
+function clearSess(){try{localStorage.removeItem(SESS)}catch(e){}}
+function silentSignIn(){signIn(true)}
+function ensureFresh(){if(token&&getSess()&&Date.now()>tokExp-120000&&!$("#layer").firstChild){silentSignIn();return true}return false}
+function signIn(silent){silent=silent===true;var s=Math.random().toString(36).slice(2)+Date.now().toString(36);try{sessionStorage.setItem("oauth_state",s);if(silent)sessionStorage.setItem("silent","1");else sessionStorage.removeItem("silent")}catch(e){}
+  location.href="https://accounts.google.com/o/oauth2/v2/auth?client_id="+enc(CFG.CLIENT_ID)+"&redirect_uri="+enc(location.origin+"/")+"&response_type=token&scope="+enc(CFG.SCOPE)+"&include_granted_scopes=true&prompt="+(silent?"none":"select_account")+"&state="+enc(s)}
 function consumeHash(){var h=location.hash||"";if(h.length<2)return null;var p=new URLSearchParams(h.slice(1));if(!p.get("access_token")&&!p.get("error"))return null;
   var want=null;try{want=sessionStorage.getItem("oauth_state");sessionStorage.removeItem("oauth_state")}catch(e){}
   try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}
+  var wasSilent=false;try{wasSilent=sessionStorage.getItem("silent")==="1";sessionStorage.removeItem("silent")}catch(e){}
+  if(p.get("error")&&wasSilent){clearSess();return{error:"החיבור פג. התחברו שוב."}}
   if(p.get("error"))return{error:"גוגל החזירה שגיאה: "+p.get("error")+". בדקו שהמייל שלכם ברשימת Test users ושהכתובת מוגדרת ב-Redirect URIs."};
   if(!want||p.get("state")!==want)return{error:"ההתחברות לא אומתה. נסו שוב."};
-  return{token:p.get("access_token")}}
-function signOut(){var t=token;token=null;rows=[];loaded=false;readOnly=false;try{if(t)fetch("https://oauth2.googleapis.com/revoke?token="+enc(t),{method:"POST",mode:"no-cors"})}catch(e){}showGate()}
+  return{token:p.get("access_token"),exp:Number(p.get("expires_in"))||3600}}
+function signOut(){clearSess();var t=token;token=null;rows=[];loaded=false;readOnly=false;try{if(t)fetch("https://oauth2.googleapis.com/revoke?token="+enc(t),{method:"POST",mode:"no-cors"})}catch(e){}showGate()}
 
 function yearOf(d){var m=String(d).match(/\d{1,2}\.\d{1,2}\.(\d{4})/g);if(!m)return 0;var best=0;m.forEach(function(x){var y=+x.slice(-4);if(!best||y<best)best=y});return best}
 function dateOf(d){var m=String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/g);if(!m)return 0;var best=0;m.forEach(function(x){var p=x.split(".");var t=Date.UTC(+p[2],+p[1]-1,+p[0]);if(!best||t<best)best=t});return best}
@@ -219,14 +227,14 @@ function loadAll(first){if(busyLoad)return Promise.resolve();busyLoad=true;setSy
     if(fq){var qi=$("#q");if(qi){qi.focus();try{qi.setSelectionRange(pos,pos)}catch(e){}}}startPolling()})
   .catch(function(e){busyLoad=false;throw e}).catch(loadErr)}
 function loadErr(e){var s=e&&e.status;
-  if(s===401||(e&&e.auth)){showGate({error:"החיבור פג. התחברו שוב."});return}
+  if(s===401||(e&&e.auth)){if(getSess()){silentSignIn();return}showGate({error:"החיבור פג. התחברו שוב."});return}
   if(s===403||s===404){showGate({error:"לחשבון הזה אין גישה לגיליון החובות. התחברו עם חשבון אחר או בקשו הרשאה מבעל הגיליון."});return}
   if(s===400){showGate({error:"לא נמצאה הלשונית \""+CFG.TAB+"\" בגיליון."});return}
   if(loaded){setSync(false,"העדכון האחרון נכשל");return}
   showGate({error:"אי אפשר לטעון את הגיליון כרגע. נסו שוב בעוד רגע."})}
-function startPolling(){stopPolling();pollTimer=setInterval(function(){if(!document.hidden&&!$("#layer").firstChild&&token)loadAll(false)},60000)}
+function startPolling(){stopPolling();pollTimer=setInterval(function(){if(ensureFresh())return;if(!document.hidden&&!$("#layer").firstChild&&token)loadAll(false)},60000)}
 function stopPolling(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
-document.addEventListener("visibilitychange",function(){if(!document.hidden&&token&&loaded&&!$("#layer").firstChild)loadAll(false)});
+document.addEventListener("visibilitychange",function(){if(!document.hidden&&ensureFresh())return;if(!document.hidden&&token&&loaded&&!$("#layer").firstChild)loadAll(false)});
 function setSync(ok,t){var s=$("#sync");s.className="sync"+(ok?" live":"");s.textContent=t;s.appendChild(el("b"))}
 
 /* כתיבה: בודקים שהשורה לא השתנתה, ואז מעדכנים רק את העמודות B, F, G */
@@ -240,7 +248,7 @@ function saveRow(r,patch){
     if(patch.paid!=null)data.push({range:t+"G"+r.ord,values:[[patch.paid]]});
     return api("/values:batchUpdate",{method:"POST",body:{valueInputOption:"RAW",data:data}})})}
 function writeErr(e){if(e&&e.status===403){readOnly=true;return "לחשבון הזה אין הרשאת כתיבה בגיליון"}
-  if(e&&(e.auth||e.status===401))return "החיבור פג. התחברו מחדש";return "לא ברור אם השינוי נשמר. בדקו בגיליון לפני שמנסים שוב"}
+  if(e&&(e.auth||e.status===401)){if(getSess())setTimeout(silentSignIn,1200);return "החיבור מתחדש. נסו שוב בעוד רגע"};return "לא ברור אם השינוי נשמר. בדקו בגיליון לפני שמנסים שוב"}
 function today(){var d=new Date();function z(n){return (n<10?"0":"")+n}return z(d.getDate())+"."+z(d.getMonth()+1)+"."+d.getFullYear()}
 function addNote(old,t){return old?old+" | "+t:t}
 function run(r,patch,okMsg){return saveRow(r,patch).then(function(){toast(okMsg);closeLayer();loadAll(false)}).catch(function(e){
@@ -346,7 +354,12 @@ function render(){document.querySelectorAll(".tabs button").forEach(function(b){
 document.querySelectorAll(".tabs button").forEach(function(b){b.onclick=function(){go(b.dataset.tab)}});
 $("#signout").onclick=signOut;
 fetch("/api/config",{cache:"no-store"}).then(function(r){return r.ok?r.json():null}).then(function(j){if(j&&j.clientId)CFG.CLIENT_ID=j.clientId}).catch(function(){}).then(function(){
-  var h=consumeHash();if(h&&h.token){token=h.token;loadAll(true);return}showGate(h&&h.error?{error:h.error}:undefined)});
+  var h=consumeHash();
+  if(h&&h.token){token=h.token;putSess(token,h.exp);loadAll(true);return}
+  if(h&&h.error){showGate({error:h.error});return}
+  var ss=getSess();
+  if(ss){if(ss.exp>Date.now()+120000){token=ss.tok;tokExp=ss.exp;loadAll(true)}else silentSignIn();return}
+  showGate()});
 })();
 </script>
 </body>
