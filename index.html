@@ -285,8 +285,6 @@ function renderList(host){var f=el("div","filters");
   ch.appendChild(chip("פתוחים",rows.filter(function(r){return !r.paid}).length,st.view==="open",function(){st.view="open";render()}));
   ch.appendChild(chip("שולמו",rows.filter(function(r){return r.paid}).length,st.view==="paid",function(){st.view="paid";render()}));
   ch.appendChild(chip("הכל",rows.length,st.view==="all",function(){st.view="all";render()}));
-  ch.appendChild(chip("₪",null,st.cur==="ils",function(){st.cur=st.cur==="ils"?"":"ils";render()}));
-  ch.appendChild(chip("רובל",null,st.cur==="ru",function(){st.cur=st.cur==="ru"?"":"ru";render()}));
   f.appendChild(ch);
   var sr=el("div","selrow");sr.style.gridTemplateColumns="1fr 1fr";
   var ys={};rows.forEach(function(r){ys[r.year||"לא ידוע"]=1});
@@ -378,8 +376,7 @@ function openNew(){
   sh.appendChild(el("h3",null,"התחייבות חדשה"));
   function fld(id,label,type,ph){var w=el("div","field");var l=el("label",null,label);l.htmlFor=id;w.appendChild(l);var i=el("input");i.id=id;i.type=type;if(ph)i.placeholder=ph;if(type==="number"){i.inputMode="decimal";i.min="0"}w.appendChild(i);return w}
   sh.appendChild(fld("n-name","שם","text"));
-  var g=el("div","grid2");g.appendChild(fld("n-amt","סכום","number"));
-  var cw=el("div","field");var cl=el("label",null,"מטבע");cl.htmlFor="n-cur";cw.appendChild(cl);var cs=el("select");cs.id="n-cur";[["ש\"ח","₪ שקל"],["רובל","רובל"]].forEach(function(o){var op=el("option",null,o[1]);op.value=o[0];cs.appendChild(op)});cw.appendChild(cs);g.appendChild(cw);sh.appendChild(g);
+  sh.appendChild(fld("n-amt","סכום ב-₪","number"));
   sh.appendChild(fld("n-parsha","פרשה (לא חובה)","text","לדוגמה: וישלח"));
   sh.appendChild(fld("n-date","תאריך","date"));
   sh.appendChild(fld("n-notes","הערה (לא חובה)","text"));
@@ -392,7 +389,7 @@ function openNew(){
   var bt=el("div","sheetbtns");var cancel=el("button","btn","ביטול");cancel.type="button";cancel.onclick=close;
   var save=el("button","btn primary","הוספה");save.type="button";if(readOnly)save.disabled=true;bt.appendChild(cancel);bt.appendChild(save);sh.appendChild(bt);
   function busy(b){save.disabled=b||readOnly;cancel.disabled=b}
-  function read(){var name=$("#n-name").value.trim(),amt=num($("#n-amt").value),cur=$("#n-cur").value,pr=$("#n-parsha").value.trim(),dt=isoToDmy($("#n-date").value||todayIso());
+  function read(){var name=$("#n-name").value.trim(),amt=num($("#n-amt").value),cur="ש\"ח",pr=$("#n-parsha").value.trim(),dt=isoToDmy($("#n-date").value||todayIso());
     return{name:name,amt:amt,cur:cur,ru:cur==="רובל",parsha:(pr?pr+" ":"")+"("+dt+")",notes:$("#n-notes").value.trim()}}
   function separate(){var d=read();busy(true);appendPledge(d).then(function(){done("ההתחייבות של "+d.name+" נוספה לגיליון")}).catch(fail)}
   save.onclick=function(){var d=read();
