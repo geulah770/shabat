@@ -248,6 +248,10 @@ function saveRow(r,patch){
     if(patch.notes!=null)data.push({range:t+"F"+r.ord,values:[[patch.notes]]});
     if(patch.paid!=null)data.push({range:t+"G"+r.ord,values:[[patch.paid]]});
     return api("/values:batchUpdate",{method:"POST",body:{valueInputOption:"RAW",data:data}})})}
+function deleteRow(r){
+  var rng="'"+CFG.TAB+"'!A"+r.ord+":G"+r.ord;
+  return getValues(rng).then(function(v){if(sigOf(v[0])!==r.sig)throw staleErr();
+    return api(":batchUpdate",{method:"POST",body:{requests:[{deleteDimension:{range:{sheetId:0,dimension:"ROWS",startIndex:r.ord-1,endIndex:r.ord}}}]}})})}
 function writeErr(e){if(e&&e.status===403){readOnly=true;return "לחשבון הזה אין הרשאת כתיבה בגיליון"}
   if(e&&(e.auth||e.status===401)){if(getSess())setTimeout(silentSignIn,1200);return "החיבור מתחדש. נסו שוב בעוד רגע"};return "לא ברור אם השינוי נשמר. בדקו בגיליון לפני שמנסים שוב"}
 function today(){var d=new Date();function z(n){return (n<10?"0":"")+n}return z(d.getDate())+"."+z(d.getMonth()+1)+"."+d.getFullYear()}
@@ -340,6 +344,14 @@ function openEditor(r){var layer=$("#layer");layer.textContent="";
   }else{
     var un=el("button","btn full","ביטול סימון תשלום");un.type="button";if(readOnly)un.disabled=true;
     un.onclick=function(){un.disabled=true;run(r,{paid:false},"הסימון בוטל עבור "+r.name+".")};bt.appendChild(un)}
+  var del=el("button","btn full","מחיקת ההתחייבות לגמרי");del.style.color="var(--crit)";del.type="button";if(readOnly)del.disabled=true;var armed=false;
+  del.onclick=function(){
+    if(!armed){armed=true;del.style.background="var(--crit)";del.style.color="#fff";del.textContent="לחצו שוב כדי למחוק את השורה מהגיליון";setTimeout(function(){armed=false;del.style.background="";del.style.color="var(--crit)";del.textContent="מחיקת ההתחייבות לגמרי"},4000);return}
+    del.disabled=true;
+    deleteRow(r).then(function(){toast("ההתחייבות של "+r.name+" נמחקה מהגיליון");closeLayer();loadAll(false)}).catch(function(e){
+      if(e&&e.stale){toast("השורה שונתה בגיליון בינתיים. הנתונים רועננו, נסו שוב.");closeLayer();loadAll(false);return}
+      del.disabled=false;toast(writeErr(e))})};
+  bt.appendChild(del);
   var c=el("button","btn full","סגירה");c.type="button";c.onclick=close;bt.appendChild(c);
   sh.appendChild(bt);scrim.appendChild(sh);layer.appendChild(scrim);document.addEventListener("keydown",esc);
   function esc(e){if(e.key==="Escape")close()}function close(){layer.textContent="";document.removeEventListener("keydown",esc)}}
